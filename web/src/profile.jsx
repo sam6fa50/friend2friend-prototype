@@ -5,7 +5,7 @@ import { Icon, Avatar, Pill, SocialIcon, MapPlaceholder,
 import { Toggle } from './sheets.jsx'
 import { F2F_BADGES, F2F_BANNED } from './data.js'
 
-export function ProfileScreen({ profile, setProfile, onOpenInterests, onPreview, blocked }) {
+export function ProfileScreen({ profile, setProfile, onOpenInterests, onPreview, blocked, onSignOut }) {
   const INK = F2F_INK, GREEN = F2F_GREEN;
   const [saved, setSaved] = useState(false);
   const bio = profile.bio;
@@ -142,6 +142,15 @@ export function ProfileScreen({ profile, setProfile, onOpenInterests, onPreview,
               ))}
             </div>
           </Section>
+
+          {/* LOG OUT */}
+          {onSignOut && (
+            <button onClick={onSignOut} style={{ width: '100%', padding: '13px', borderRadius: 14,
+              border: '1px solid #e4e4e7', background: '#fff', fontWeight: 600, fontSize: 14.5,
+              color: '#dc2626', cursor: 'pointer' }}>
+              Log out
+            </button>
+          )}
         </div>
       </div>
 

@@ -9,6 +9,8 @@ import { ProfileScreen } from './profile.jsx'
 import { Toast, Icon, BottomNav, Avatar, SocialIcon, Pill, F2F_INK, F2F_GREEN } from './ui.jsx'
 import { InterestSearchSheet, BlockSheet, ProfileDetailSheet, Sheet } from './sheets.jsx'
 import { F2F_ME, F2F_CONVERSATIONS, F2F_INVITES, F2F_BADGES } from './data.js'
+import { supabase } from './supabaseClient.js'
+import { AuthScreen } from './auth.jsx'
 
 function App() {
   const [onboarded, setOnboarded] = useState(() => localStorage.getItem('f2f_onboarded') === '1');
@@ -28,6 +30,15 @@ function App() {
   const [detailUser, setDetailUser] = useState(null);
   const [previewProfile, setPreviewProfile] = useState(null);
   const [toast, setToast] = useState(null);
+
+  // auth session
+  const [session, setSession] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setAuthReady(true); });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
+    return () => sub.subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (!toast) return;
@@ -73,7 +84,9 @@ function App() {
   return (
     <IOSDevice>
       <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
-        {!onboarded ? (
+        {!authReady ? null : !session ? (
+          <AuthScreen />
+        ) : !onboarded ? (
           <Onboarding onDone={finishOnboarding} profile={profile} setProfile={setProfile} />
         ) : (
           <>
@@ -90,7 +103,8 @@ function App() {
                 onBlock={setBlockTarget} />}
               {tab === 'leaderboard' && <LeaderboardScreen blocked={blocked} />}
               {tab === 'profile' && <ProfileScreen profile={profile} setProfile={setProfile}
-                onOpenInterests={() => setInterestSheet(true)} onPreview={setPreviewProfile} blocked={blocked} />}
+                onOpenInterests={() => setInterestSheet(true)} onPreview={setPreviewProfile} blocked={blocked}
+                onSignOut={() => supabase.auth.signOut()} />}
             </div>
 
             {/* hide bottom nav while inside a chat */}
