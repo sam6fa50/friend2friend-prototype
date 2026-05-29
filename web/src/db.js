@@ -104,6 +104,109 @@ export async function fetchLeaderboard(limit = 50) {
   });
 }
 
+// ── Messaging ────────────────────────────────────────────────────────────
+function fmtTime(iso) {
+  try { return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+  catch { return ''; }
+}
+
+// My accepted conversations, each with the other member + message history.
+export async function fetchConversations(me) {
+  const { data: mine, error } = await supabase.from('conversation_members')
+    .select('conversation_id').eq('user_id', me.id).eq('status', 'accepted');
+  if (error) throw error;
+  const ids = (mine || []).map(r => r.conversation_id);
+  if (!ids.length) return [];
+
+  const [{ data: members }, { data: msgs }] = await Promise.all([
+    supabase.from('conversation_members')
+      .select('conversation_id, user_id, profiles(first_name, username)').in('conversation_id', ids),
+    supabase.from('messages')
+      .select('conversation_id, sender_id, body, created_at')
+      .in('conversation_id', ids).order('created_at', { ascending: true }),
+  ]);
+
+  const byConv = {};
+  (msgs || []).forEach(m => { (byConv[m.conversation_id] ||= []).push(m); });
+
+  return ids.map(cid => {
+    const other = (members || []).find(m => m.conversation_id === cid && m.user_id !== me.id);
+    const name = other ? (other.profiles?.first_name || other.profiles?.username || 'User') : 'Chat';
+    const list = byConv[cid] || [];
+    const last = list[list.length - 1];
+    return {
+      id: cid, otherId: other?.user_id, name, initials: initialsFrom(name),
+      distance: '', shared: [], unread: 0,
+      time: last ? fmtTime(last.created_at) : '',
+      lastAt: last ? last.created_at : '',
+      messages: list.map(m => ({ from: m.sender_id === me.id ? 'me' : 'them', text: m.body, time: fmtTime(m.created_at) })),
+    };
+  }).sort((a, b) => (b.lastAt || '').localeCompare(a.lastAt || ''));
+}
+
+// Pending chat invitations addressed to me.
+export async function fetchInvites(me) {
+  const { data: pend, error } = await supabase.from('conversation_members')
+    .select('conversation_id').eq('user_id', me.id).eq('status', 'pending');
+  if (error) throw error;
+  const ids = (pend || []).map(r => r.conversation_id);
+  if (!ids.length) return [];
+  const { data: members } = await supabase.from('conversation_members')
+    .select('conversation_id, user_id, status, profiles(first_name, username)').in('conversation_id', ids);
+  return ids.map(cid => {
+    const inviter = (members || []).find(m => m.conversation_id === cid && m.user_id !== me.id);
+    const name = inviter ? (inviter.profiles?.first_name || inviter.profiles?.username || 'Someone') : 'Someone';
+    return { id: cid, name, initials: initialsFrom(name), distance: '', shared: [], note: 'wants to chat' };
+  });
+}
+
+export async function fetchMessages(me, conversationId) {
+  const { data, error } = await supabase.from('messages')
+    .select('sender_id, body, created_at').eq('conversation_id', conversationId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data || []).map(m => ({ from: m.sender_id === me.id ? 'me' : 'them', text: m.body, time: fmtTime(m.created_at) }));
+}
+
+export async function sendMessage(me, conversationId, body) {
+  const { error } = await supabase.from('messages')
+    .insert({ conversation_id: conversationId, sender_id: me.id, body });
+  if (error) throw error;
+}
+
+// Create a DM with another user (both accepted = an instant match) + opener.
+export async function createDmWith(me, otherId, opener) {
+  // reuse an existing DM if one already exists between us
+  const { data: mineConvs } = await supabase.from('conversation_members')
+    .select('conversation_id').eq('user_id', me.id);
+  const myIds = (mineConvs || []).map(r => r.conversation_id);
+  if (myIds.length) {
+    const { data: shared } = await supabase.from('conversation_members')
+      .select('conversation_id').eq('user_id', otherId).in('conversation_id', myIds);
+    if (shared && shared.length) return shared[0].conversation_id;
+  }
+
+  const { data: conv, error } = await supabase.from('conversations')
+    .insert({ is_dm: true, created_by: me.id }).select('id').single();
+  if (error) throw error;
+  // insert my membership first so the RLS is_member() check passes for the other row
+  const m1 = await supabase.from('conversation_members')
+    .insert({ conversation_id: conv.id, user_id: me.id, status: 'accepted' });
+  if (m1.error) throw m1.error;
+  const m2 = await supabase.from('conversation_members')
+    .insert({ conversation_id: conv.id, user_id: otherId, status: 'accepted' });
+  if (m2.error) throw m2.error;
+  if (opener) await sendMessage(me, conv.id, opener);
+  return conv.id;
+}
+
+export async function respondToInvite(me, conversationId, accept) {
+  const { error } = await supabase.from('conversation_members')
+    .update({ status: accept ? 'accepted' : 'declined' })
+    .eq('conversation_id', conversationId).eq('user_id', me.id);
+  if (error) throw error;
+}
+
 // Persist editable profile fields + sync interest subscriptions.
 export async function saveProfile(profile) {
   const { error } = await supabase.from('profiles').update({
