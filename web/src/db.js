@@ -186,18 +186,21 @@ export async function createDmWith(me, otherId, opener) {
     if (shared && shared.length) return shared[0].conversation_id;
   }
 
-  const { data: conv, error } = await supabase.from('conversations')
-    .insert({ is_dm: true, created_by: me.id }).select('id').single();
-  if (error) throw error;
+  // Generate the id client-side so we don't have to read the row back — the
+  // conv_select policy (is_member) would block reading a conversation you just
+  // created but aren't a member of yet.
+  const convId = crypto.randomUUID();
+  const ins = await supabase.from('conversations').insert({ id: convId, is_dm: true, created_by: me.id });
+  if (ins.error) throw ins.error;
   // insert my membership first so the RLS is_member() check passes for the other row
   const m1 = await supabase.from('conversation_members')
-    .insert({ conversation_id: conv.id, user_id: me.id, status: 'accepted' });
+    .insert({ conversation_id: convId, user_id: me.id, status: 'accepted' });
   if (m1.error) throw m1.error;
   const m2 = await supabase.from('conversation_members')
-    .insert({ conversation_id: conv.id, user_id: otherId, status: 'accepted' });
+    .insert({ conversation_id: convId, user_id: otherId, status: 'accepted' });
   if (m2.error) throw m2.error;
-  if (opener) await sendMessage(me, conv.id, opener);
-  return conv.id;
+  if (opener) await sendMessage(me, convId, opener);
+  return convId;
 }
 
 export async function respondToInvite(me, conversationId, accept) {

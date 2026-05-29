@@ -1,15 +1,15 @@
-// ── Messages — DM list, chat view, invites ─────────────────────────────────
+// ── Messages — DM list, chat view, invites (Supabase-backed) ───────────────
 import { useState, useRef, useEffect } from 'react'
 import { ScreenHeader, Icon, Avatar, F2F_INK, F2F_GREEN, F2F_BG, F2F_TOP_SAFE, F2F_BOT_SAFE } from './ui.jsx'
 
-export function MessagesScreen({ conversations, setConversations, invites, setInvites, openChatId, setOpenChatId, onBlock }) {
+export function MessagesScreen({ conversations, invites, openChatId, setOpenChatId, onBlock, onSend, onAcceptInvite, onDeclineInvite, onRefresh }) {
   const [seg, setSeg] = useState('chats');
   const INK = F2F_INK, GREEN = F2F_GREEN;
 
   const open = conversations.find(c => c.id === openChatId);
   if (open) {
-    return <ChatView convo={open} conversations={conversations} setConversations={setConversations}
-      onBack={() => setOpenChatId(null)} onBlock={onBlock} />;
+    return <ChatView convo={open} onBack={() => setOpenChatId(null)} onBlock={onBlock}
+      onSend={onSend} onRefresh={onRefresh} />;
   }
 
   return (
@@ -37,18 +37,18 @@ export function MessagesScreen({ conversations, setConversations, invites, setIn
                 <span style={{ fontWeight: 600, fontSize: 15.5, color: INK }}>{c.name}</span>
                 <span style={{ fontSize: 12, color: c.unread ? GREEN : '#a1a1aa', fontWeight: c.unread ? 700 : 400 }}>{c.time}</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '3px 0 5px' }}>
-                <Icon name="pin" size={12} stroke="#a1a1aa" />
-                <span style={{ fontSize: 11.5, color: '#a1a1aa' }}>{c.distance}</span>
-                {c.shared.slice(0, 2).map(s => (
-                  <span key={s} style={{ fontSize: 10.5, fontWeight: 600, background: INK, color: '#fff',
-                    padding: '2px 8px', borderRadius: 999 }}>{s}</span>
-                ))}
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+              {c.shared?.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '3px 0 5px' }}>
+                  {c.shared.slice(0, 2).map(s => (
+                    <span key={s} style={{ fontSize: 10.5, fontWeight: 600, background: INK, color: '#fff',
+                      padding: '2px 8px', borderRadius: 999 }}>{s}</span>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 3 }}>
                 <span style={{ fontSize: 13.5, color: c.unread ? INK : '#71717a', fontWeight: c.unread ? 600 : 400,
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {c.messages[c.messages.length - 1].text}
+                  {c.messages.length ? c.messages[c.messages.length - 1].text : 'Say hi 👋'}
                 </span>
                 {c.unread > 0 && (
                   <span style={{ flexShrink: 0, minWidth: 20, height: 20, borderRadius: 999, background: GREEN,
@@ -68,26 +68,12 @@ export function MessagesScreen({ conversations, setConversations, invites, setIn
               <Avatar initials={iv.initials} size={52} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 600, fontSize: 15.5, color: INK }}>{iv.name}</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '3px 0' }}>
-                  <Icon name="pin" size={12} stroke="#a1a1aa" />
-                  <span style={{ fontSize: 11.5, color: '#a1a1aa' }}>{iv.distance}</span>
-                  {iv.shared.map(s => (
-                    <span key={s} style={{ fontSize: 10.5, fontWeight: 600, background: INK, color: '#fff',
-                      padding: '2px 8px', borderRadius: 999 }}>{s}</span>
-                  ))}
-                </div>
-                <div style={{ fontSize: 13, color: '#71717a', marginBottom: 9 }}>{iv.note}</div>
+                <div style={{ fontSize: 13, color: '#71717a', margin: '3px 0 9px' }}>{iv.note}</div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={() => {
-                    setInvites(p => p.filter(x => x.id !== iv.id));
-                    setConversations(p => [{ id: 'c-' + iv.id, name: iv.name, initials: iv.initials,
-                      distance: iv.distance, shared: iv.shared, unread: 0, time: 'now',
-                      messages: [{ from: 'them', text: 'Hey! Thanks for accepting 🙌', time: 'now' }] }, ...p]);
-                  }} style={{ flex: 1, padding: '9px 0', borderRadius: 10, border: 'none', background: INK,
-                    color: '#fff', fontWeight: 600, fontSize: 13.5, cursor: 'pointer' }}>Accept</button>
-                  <button onClick={() => setInvites(p => p.filter(x => x.id !== iv.id))}
-                    style={{ flex: 1, padding: '9px 0', borderRadius: 10, border: '1px solid #d4d4d8',
-                    background: '#fff', color: '#52525b', fontWeight: 600, fontSize: 13.5, cursor: 'pointer' }}>Decline</button>
+                  <button onClick={() => onAcceptInvite(iv.id)} style={{ flex: 1, padding: '9px 0', borderRadius: 10,
+                    border: 'none', background: INK, color: '#fff', fontWeight: 600, fontSize: 13.5, cursor: 'pointer' }}>Accept</button>
+                  <button onClick={() => onDeclineInvite(iv.id)} style={{ flex: 1, padding: '9px 0', borderRadius: 10,
+                    border: '1px solid #d4d4d8', background: '#fff', color: '#52525b', fontWeight: 600, fontSize: 13.5, cursor: 'pointer' }}>Decline</button>
                 </div>
               </div>
             </div>
@@ -102,44 +88,43 @@ export function MessagesScreen({ conversations, setConversations, invites, setIn
   );
 }
 
-function ChatView({ convo, conversations, setConversations, onBack, onBlock }) {
+function ChatView({ convo, onBack, onBlock, onSend, onRefresh }) {
   const [text, setText] = useState('');
   const [menu, setMenu] = useState(false);
+  const [sending, setSending] = useState(false);
   const scroller = useRef(null);
-  const INK = F2F_INK, GREEN = F2F_GREEN;
+  const INK = F2F_INK;
 
+  // poll for new messages while the chat is open
   useEffect(() => {
-    // mark read
-    setConversations(p => p.map(c => c.id === convo.id ? { ...c, unread: 0 } : c));
-  }, [convo.id]);
+    if (!onRefresh) return;
+    const t = setInterval(() => onRefresh(), 3000);
+    return () => clearInterval(t);
+  }, [onRefresh]);
+
   useEffect(() => { if (scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight; });
 
-  function send() {
+  async function send() {
     const t = text.trim();
-    if (!t) return;
-    const now = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    setConversations(p => p.map(c => c.id === convo.id
-      ? { ...c, time: 'now', messages: [...c.messages, { from: 'me', text: t, time: now }] } : c));
-    setText('');
-    // canned reply
-    setTimeout(() => {
-      setConversations(p => p.map(c => c.id === convo.id
-        ? { ...c, messages: [...c.messages, { from: 'them', text: pickReply(t), time: now }] } : c));
-    }, 1100);
+    if (!t || sending) return;
+    setText(''); setSending(true);
+    try { await onSend(convo.id, t); }
+    catch (e) { console.error('send failed', e); setText(t); }
+    finally { setSending(false); }
   }
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: F2F_BG }}>
       {/* chat header */}
-      <div style={{ paddingTop: F2F_TOP_SAFE - 14, paddingBottom: 12, background: '#fff',
-        borderBottom: '1px solid #ececef', display: 'flex', alignItems: 'center', gap: 10, padding: `${F2F_TOP_SAFE - 14}px 14px 12px`, position: 'relative' }}>
+      <div style={{ background: '#fff', borderBottom: '1px solid #ececef', display: 'flex', alignItems: 'center',
+        gap: 10, padding: `${F2F_TOP_SAFE - 14}px 14px 12px`, position: 'relative' }}>
         <button onClick={onBack} style={iconBtn}><Icon name="chevL" size={26} stroke={INK} /></button>
         <Avatar initials={convo.initials} size={38} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 16, color: INK }}>{convo.name}</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: '#a1a1aa' }}>
-            <Icon name="pin" size={11} stroke="#a1a1aa" /> {convo.distance} · shares {convo.shared.join(', ')}
-          </div>
+          {convo.shared?.length > 0 && (
+            <div style={{ fontSize: 11.5, color: '#a1a1aa' }}>shares {convo.shared.join(', ')}</div>
+          )}
         </div>
         <button onClick={() => setMenu(m => !m)} style={iconBtn}>
           <svg width="22" height="6" viewBox="0 0 22 6"><circle cx="3" cy="3" r="2.5" fill="#71717a"/><circle cx="11" cy="3" r="2.5" fill="#71717a"/><circle cx="19" cy="3" r="2.5" fill="#71717a"/></svg>
@@ -179,9 +164,9 @@ function ChatView({ convo, conversations, setConversations, onBack, onBlock }) {
           onKeyDown={e => { if (e.key === 'Enter') send(); }}
           placeholder="Message…" style={{ flex: 1, border: '1px solid #e4e4e7', borderRadius: 999,
           padding: '11px 16px', fontSize: 14.5, outline: 'none', background: F2F_BG }} />
-        <button onClick={send} disabled={!text.trim()} style={{
+        <button onClick={send} disabled={!text.trim() || sending} style={{
           width: 42, height: 42, borderRadius: '50%', border: 'none', cursor: 'pointer',
-          background: text.trim() ? INK : '#d4d4d8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          background: text.trim() && !sending ? INK : '#d4d4d8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Icon name="send" size={20} fill="#fff" stroke="#fff" sw={1.5} />
         </button>
       </div>
@@ -210,11 +195,6 @@ function EmptyNote({ icon, title, sub }) {
       <p style={{ fontSize: 13.5, lineHeight: 1.5, maxWidth: 230, margin: '6px auto 0' }}>{sub}</p>
     </div>
   );
-}
-
-function pickReply(t) {
-  const r = ['Sounds good! 😄', "Let's do it.", 'Haha for sure', 'Nice, what time works?', 'Down! Where should we meet?'];
-  return r[Math.floor(Math.random() * r.length)];
 }
 
 const rowStyle = { display: 'flex', gap: 12, padding: '12px 18px', cursor: 'pointer',

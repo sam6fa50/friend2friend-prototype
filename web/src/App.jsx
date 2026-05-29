@@ -8,17 +8,18 @@ import { LeaderboardScreen } from './leaderboard.jsx'
 import { ProfileScreen } from './profile.jsx'
 import { Toast, Icon, BottomNav, Avatar, SocialIcon, Pill, F2F_INK, F2F_GREEN } from './ui.jsx'
 import { InterestSearchSheet, BlockSheet, ProfileDetailSheet, Sheet } from './sheets.jsx'
-import { F2F_CONVERSATIONS, F2F_INVITES, F2F_BADGES } from './data.js'
+import { F2F_BADGES } from './data.js'
 import { supabase } from './supabaseClient.js'
 import { AuthScreen } from './auth.jsx'
-import { fetchProfile, saveProfile, fetchInterestsCatalog, fetchDiscover, fetchLeaderboard } from './db.js'
+import { fetchProfile, saveProfile, fetchInterestsCatalog, fetchDiscover, fetchLeaderboard,
+  fetchConversations, fetchInvites, sendMessage, createDmWith, respondToInvite } from './db.js'
 
 function App() {
   const [onboarded, setOnboarded] = useState(() => localStorage.getItem('f2f_onboarded') === '1');
   const [tab, setTab] = useState('discover');
   const [profile, setProfile] = useState(null);          // loaded from Supabase after auth
-  const [conversations, setConversations] = useState(F2F_CONVERSATIONS);
-  const [invites, setInvites] = useState(F2F_INVITES);
+  const [conversations, setConversations] = useState([]);
+  const [invites, setInvites] = useState([]);
   const [openChatId, setOpenChatId] = useState(null);
   const [blocked, setBlocked] = useState([]);
 
@@ -62,6 +63,8 @@ function App() {
     if (!profile?.id) return;
     fetchDiscover(profile).then(setDiscoverDeck).catch(e => console.error('discover load', e));
     fetchLeaderboard().then(setLeaderboard).catch(e => console.error('leaderboard load', e));
+    fetchConversations(profile).then(setConversations).catch(e => console.error('conversations load', e));
+    fetchInvites(profile).then(setInvites).catch(e => console.error('invites load', e));
   }, [profile?.id]);
 
   useEffect(() => {
@@ -77,21 +80,38 @@ function App() {
     setOnboarded(true);
   }
 
-  function matchWith(user) {
-    setToast({ accent: true, text: `It's a match with ${user.name.split(' ')[0]}! Say hi 👋` });
-    const id = 'c-' + user.id;
-    setConversations(prev => prev.some(c => c.id === id) ? prev : [{
-      id, name: user.name, initials: user.initials, distance: user.distance,
-      shared: user.shared || user.interests.slice(0, 2), unread: 0, time: 'now',
-      messages: [{ from: 'them', text: `Hey! We matched on ${(user.shared || user.interests)[0]} 🎉`, time: 'now' }],
-    }, ...prev]);
+  const refreshConversations = () => profile && fetchConversations(profile).then(setConversations).catch(e => console.error('conv refresh', e));
+  const refreshInvites = () => profile && fetchInvites(profile).then(setInvites).catch(e => console.error('invite refresh', e));
+
+  async function onSendMessage(conversationId, body) {
+    await sendMessage(profile, conversationId, body);
+    await refreshConversations();
+  }
+  async function onAcceptInvite(conversationId) {
+    await respondToInvite(profile, conversationId, true);
+    await Promise.all([refreshInvites(), refreshConversations()]);
+  }
+  async function onDeclineInvite(conversationId) {
+    await respondToInvite(profile, conversationId, false);
+    await refreshInvites();
   }
 
-  function messageFromDetail(user) {
-    matchWith(user);
+  async function matchWith(user) {
+    try {
+      await createDmWith(profile, user.id, `Hey! We matched on ${(user.shared || user.interests)[0]} 🎉`);
+      setToast({ accent: true, text: `It's a match with ${user.name.split(' ')[0]}! Say hi 👋` });
+      await refreshConversations();
+    } catch (e) { console.error('match failed', e); setToast({ text: 'Could not start the chat.' }); }
+  }
+
+  async function messageFromDetail(user) {
     setDetailUser(null);
-    setTab('messages');
-    setOpenChatId('c-' + user.id);
+    try {
+      const convId = await createDmWith(profile, user.id, null);
+      await refreshConversations();
+      setTab('messages');
+      setOpenChatId(convId);
+    } catch (e) { console.error('message failed', e); setToast({ text: 'Could not open the chat.' }); }
   }
 
   function confirmBlock(target, scopes) {
@@ -126,10 +146,11 @@ function App() {
             <div style={{ position: 'absolute', inset: 0 }}>
               {tab === 'discover' && <DiscoverScreen deck={discoverDeck} onMatch={matchWith} onOpenProfile={setDetailUser} />}
               {tab === 'messages' && <MessagesScreen
-                conversations={conversations} setConversations={setConversations}
-                invites={invites} setInvites={setInvites}
+                conversations={conversations} invites={invites}
                 openChatId={openChatId} setOpenChatId={setOpenChatId}
-                onBlock={setBlockTarget} />}
+                onBlock={setBlockTarget}
+                onSend={onSendMessage} onAcceptInvite={onAcceptInvite} onDeclineInvite={onDeclineInvite}
+                onRefresh={refreshConversations} />}
               {tab === 'leaderboard' && <LeaderboardScreen profile={profile} board={leaderboard} blocked={blocked} />}
               {tab === 'profile' && <ProfileScreen profile={profile} setProfile={setProfile}
                 onOpenInterests={() => setInterestSheet(true)} onPreview={setPreviewProfile} blocked={blocked}
