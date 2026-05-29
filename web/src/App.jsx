@@ -8,17 +8,15 @@ import { LeaderboardScreen } from './leaderboard.jsx'
 import { ProfileScreen } from './profile.jsx'
 import { Toast, Icon, BottomNav, Avatar, SocialIcon, Pill, F2F_INK, F2F_GREEN } from './ui.jsx'
 import { InterestSearchSheet, BlockSheet, ProfileDetailSheet, Sheet } from './sheets.jsx'
-import { F2F_ME, F2F_CONVERSATIONS, F2F_INVITES, F2F_BADGES } from './data.js'
+import { F2F_CONVERSATIONS, F2F_INVITES, F2F_BADGES } from './data.js'
 import { supabase } from './supabaseClient.js'
 import { AuthScreen } from './auth.jsx'
+import { fetchProfile, saveProfile } from './db.js'
 
 function App() {
   const [onboarded, setOnboarded] = useState(() => localStorage.getItem('f2f_onboarded') === '1');
   const [tab, setTab] = useState('discover');
-  const [profile, setProfile] = useState(() => ({
-    ...F2F_ME,
-    equipped: ['pioneer', 'connector', 'streak'],
-  }));
+  const [profile, setProfile] = useState(null);          // loaded from Supabase after auth
   const [conversations, setConversations] = useState(F2F_CONVERSATIONS);
   const [invites, setInvites] = useState(F2F_INVITES);
   const [openChatId, setOpenChatId] = useState(null);
@@ -40,13 +38,25 @@ function App() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  // load the profile from Supabase whenever the signed-in user changes
+  useEffect(() => {
+    let cancelled = false;
+    if (!session?.user) { setProfile(null); return; }
+    fetchProfile(session.user)
+      .then(p => { if (!cancelled) setProfile(p); })
+      .catch(err => { console.error('Failed to load profile', err); if (!cancelled) setToast({ text: 'Could not load your profile.' }); });
+    return () => { cancelled = true; };
+  }, [session]);
+
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 2600);
     return () => clearTimeout(t);
   }, [toast]);
 
-  function finishOnboarding() {
+  async function finishOnboarding() {
+    try { if (profile) await saveProfile(profile); }
+    catch (err) { console.error('Failed to save onboarding profile', err); }
     localStorage.setItem('f2f_onboarded', '1');
     setOnboarded(true);
   }
@@ -86,6 +96,9 @@ function App() {
       <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
         {!authReady ? null : !session ? (
           <AuthScreen />
+        ) : !profile ? (
+          <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: '#fff', color: '#71717a', fontSize: 14 }}>Loading…</div>
         ) : !onboarded ? (
           <Onboarding onDone={finishOnboarding} profile={profile} setProfile={setProfile} />
         ) : (
@@ -104,7 +117,7 @@ function App() {
               {tab === 'leaderboard' && <LeaderboardScreen blocked={blocked} />}
               {tab === 'profile' && <ProfileScreen profile={profile} setProfile={setProfile}
                 onOpenInterests={() => setInterestSheet(true)} onPreview={setPreviewProfile} blocked={blocked}
-                onSignOut={() => supabase.auth.signOut()} />}
+                onSave={() => saveProfile(profile)} onSignOut={() => supabase.auth.signOut()} />}
             </div>
 
             {/* hide bottom nav while inside a chat */}

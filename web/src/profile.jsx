@@ -5,15 +5,31 @@ import { Icon, Avatar, Pill, SocialIcon, MapPlaceholder,
 import { Toggle } from './sheets.jsx'
 import { F2F_BADGES, F2F_BANNED } from './data.js'
 
-export function ProfileScreen({ profile, setProfile, onOpenInterests, onPreview, blocked, onSignOut }) {
+export function ProfileScreen({ profile, setProfile, onOpenInterests, onPreview, blocked, onSave, onSignOut }) {
   const INK = F2F_INK, GREEN = F2F_GREEN;
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveErr, setSaveErr] = useState(null);
   const bio = profile.bio;
   const overLimit = bio.length > 255;
   const flagged = F2F_BANNED.find(w => bio.toLowerCase().includes(w));
-  const canSave = !overLimit && !flagged;
+  const canSave = !overLimit && !flagged && !saving;
 
   const set = (k, v) => { setProfile(p => ({ ...p, [k]: v })); setSaved(false); };
+
+  async function handleSave() {
+    if (!canSave) return;
+    setSaving(true); setSaveErr(null);
+    try {
+      if (onSave) await onSave();
+      setSaved(true);
+    } catch (err) {
+      console.error('Save failed', err);
+      setSaveErr(err?.message || 'Could not save. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  }
   const equippedBadges = F2F_BADGES.filter(b => profile.equipped?.includes(b.id));
 
   return (
@@ -157,18 +173,22 @@ export function ProfileScreen({ profile, setProfile, onOpenInterests, onPreview,
       {/* sticky save bar */}
       <div style={{ position: 'absolute', bottom: F2F_BOT_SAFE + 62, left: 0, right: 0,
         padding: '12px 20px', background: 'linear-gradient(to top,#f4f4f5 70%,rgba(244,244,245,0))',
-        display: 'flex', gap: 10 }}>
-        <button onClick={() => onPreview(profile)} style={{ flex: 1, padding: '14px', borderRadius: 14,
-          border: '1px solid #d4d4d8', background: '#fff', fontWeight: 700, fontSize: 14.5, color: INK, cursor: 'pointer' }}>
-          Preview
-        </button>
-        <button onClick={() => canSave && setSaved(true)} disabled={!canSave} style={{ flex: 1, padding: '14px',
-          borderRadius: 14, border: 'none', background: canSave ? INK : '#d4d4d8', color: '#fff',
-          fontWeight: 700, fontSize: 14.5, cursor: canSave ? 'pointer' : 'not-allowed',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
-          {saved && <Icon name="check" size={18} stroke="#fff" />}
-          {saved ? 'Saved' : 'Save profile'}
-        </button>
+        display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {saveErr && <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#dc2626',
+          fontSize: 12.5, fontWeight: 600 }}><Icon name="info" size={15} stroke="#dc2626" /> {saveErr}</div>}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={() => onPreview(profile)} style={{ flex: 1, padding: '14px', borderRadius: 14,
+            border: '1px solid #d4d4d8', background: '#fff', fontWeight: 700, fontSize: 14.5, color: INK, cursor: 'pointer' }}>
+            Preview
+          </button>
+          <button onClick={handleSave} disabled={!canSave} style={{ flex: 1, padding: '14px',
+            borderRadius: 14, border: 'none', background: canSave ? INK : '#d4d4d8', color: '#fff',
+            fontWeight: 700, fontSize: 14.5, cursor: canSave ? 'pointer' : 'not-allowed',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+            {saved && !saving && <Icon name="check" size={18} stroke="#fff" />}
+            {saving ? 'Saving…' : saved ? 'Saved' : 'Save profile'}
+          </button>
+        </div>
       </div>
     </div>
   );
