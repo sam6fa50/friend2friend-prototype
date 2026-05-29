@@ -95,13 +95,7 @@ function ChatView({ convo, onBack, onBlock, onSend, onRefresh }) {
   const scroller = useRef(null);
   const INK = F2F_INK;
 
-  // poll for new messages while the chat is open
-  useEffect(() => {
-    if (!onRefresh) return;
-    const t = setInterval(() => onRefresh(), 3000);
-    return () => clearInterval(t);
-  }, [onRefresh]);
-
+  // Note: live refresh is handled by App's stable poll while on the Messages tab.
   useEffect(() => { if (scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight; });
 
   async function send() {

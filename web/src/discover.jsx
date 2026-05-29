@@ -2,8 +2,7 @@
 import { useState, useRef } from 'react'
 import { ScreenHeader, Icon, Avatar, Pill, F2F_INK, F2F_GREEN, F2F_BG, F2F_BOT_SAFE } from './ui.jsx'
 
-export function DiscoverScreen({ deck = [], onMatch, onOpenProfile }) {
-  const [idx, setIdx] = useState(0);
+export function DiscoverScreen({ deck = [], idx, setIdx, onSwipe, onOpenProfile }) {
   const [drag, setDrag] = useState({ x: 0, y: 0, active: false });
   const [leaving, setLeaving] = useState(null); // {dir}
   const start = useRef(null);
@@ -13,8 +12,7 @@ export function DiscoverScreen({ deck = [], onMatch, onOpenProfile }) {
   function commit(dir) {
     setLeaving(dir);
     setDrag({ x: 0, y: 0, active: false });
-    const liked = dir === 'right';
-    if (liked && current) onMatch(current);
+    if (current) onSwipe(current, dir);
     setTimeout(() => {
       setIdx(i => i + 1);
       setLeaving(null);

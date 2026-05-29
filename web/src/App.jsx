@@ -12,7 +12,7 @@ import { F2F_BADGES } from './data.js'
 import { supabase } from './supabaseClient.js'
 import { AuthScreen } from './auth.jsx'
 import { fetchProfile, saveProfile, fetchInterestsCatalog, fetchDiscover, fetchLeaderboard,
-  fetchConversations, fetchInvites, sendMessage, createDmWith, respondToInvite } from './db.js'
+  fetchConversations, fetchInvites, sendMessage, createDmWith, respondToInvite, recordSwipe } from './db.js'
 
 function App() {
   const [onboarded, setOnboarded] = useState(() => localStorage.getItem('f2f_onboarded') === '1');
@@ -43,6 +43,7 @@ function App() {
   const [catalog, setCatalog] = useState(null);
   // discover deck + leaderboard (from DB)
   const [discoverDeck, setDiscoverDeck] = useState([]);
+  const [deckIdx, setDeckIdx] = useState(0);          // lifted so it survives tab switches
   const [leaderboard, setLeaderboard] = useState([]);
 
   // load the profile + interest catalog from Supabase whenever the user changes
@@ -61,11 +62,25 @@ function App() {
   // load discover deck + leaderboard once the profile is available
   useEffect(() => {
     if (!profile?.id) return;
-    fetchDiscover(profile).then(setDiscoverDeck).catch(e => console.error('discover load', e));
+    fetchDiscover(profile).then(d => { setDiscoverDeck(d); setDeckIdx(0); }).catch(e => console.error('discover load', e));
     fetchLeaderboard().then(setLeaderboard).catch(e => console.error('leaderboard load', e));
     fetchConversations(profile).then(setConversations).catch(e => console.error('conversations load', e));
     fetchInvites(profile).then(setInvites).catch(e => console.error('invites load', e));
   }, [profile?.id]);
+
+  // Live-refresh conversations + invites while on the Messages tab (stable deps
+  // so the interval fires reliably; this is what makes incoming messages auto-appear).
+  useEffect(() => {
+    if (tab !== 'messages' || !profile) return;
+    let alive = true;
+    const tick = () => {
+      fetchConversations(profile).then(d => { if (alive) setConversations(d); }).catch(() => {});
+      fetchInvites(profile).then(d => { if (alive) setInvites(d); }).catch(() => {});
+    };
+    tick();
+    const t = setInterval(tick, 3500);
+    return () => { alive = false; clearInterval(t); };
+  }, [tab, profile?.id]);
 
   useEffect(() => {
     if (!toast) return;
@@ -102,6 +117,13 @@ function App() {
       setToast({ accent: true, text: `It's a match with ${user.name.split(' ')[0]}! Say hi 👋` });
       await refreshConversations();
     } catch (e) { console.error('match failed', e); setToast({ text: 'Could not start the chat.' }); }
+  }
+
+  // Discover swipe: record the decision (so the deck excludes them later) and,
+  // on a right-swipe, create the match.
+  function onSwipe(user, dir) {
+    recordSwipe(profile, user.id, dir === 'right' ? 'like' : 'pass');
+    if (dir === 'right') matchWith(user);
   }
 
   async function messageFromDetail(user) {
@@ -144,7 +166,8 @@ function App() {
             </Toast>}
 
             <div style={{ position: 'absolute', inset: 0 }}>
-              {tab === 'discover' && <DiscoverScreen deck={discoverDeck} onMatch={matchWith} onOpenProfile={setDetailUser} />}
+              {tab === 'discover' && <DiscoverScreen deck={discoverDeck} idx={deckIdx} setIdx={setDeckIdx}
+                onSwipe={onSwipe} onOpenProfile={setDetailUser} />}
               {tab === 'messages' && <MessagesScreen
                 conversations={conversations} invites={invites}
                 openChatId={openChatId} setOpenChatId={setOpenChatId}

@@ -65,9 +65,20 @@ export async function fetchInterestsCatalog() {
   return (data || []).map(r => r.name);
 }
 
-// Discover deck: other users who share at least one interest with me.
-// (Precise distance is Phase 4 — for now we show the region as a stand-in.)
+// Record a Discover decision so the deck excludes people you've already seen.
+export async function recordSwipe(me, targetId, direction) {
+  const { error } = await supabase.from('swipes')
+    .upsert({ swiper_id: me.id, target_id: targetId, direction }, { onConflict: 'swiper_id,target_id' });
+  if (error) console.warn('recordSwipe failed (is 0003_swipes applied?):', error.message);
+}
+
+// Discover deck: other users who share at least one interest with me and that
+// I haven't swiped yet. (Precise distance is Phase 4 — region as a stand-in.)
 export async function fetchDiscover(me) {
+  let swiped = new Set();
+  const sw = await supabase.from('swipes').select('target_id').eq('swiper_id', me.id);
+  if (!sw.error) swiped = new Set((sw.data || []).map(r => r.target_id));
+
   const { data, error } = await supabase.from('profiles')
     .select('id, first_name, username, age, bio, region, user_interests(interests(name))')
     .neq('id', me.id);
@@ -83,7 +94,7 @@ export async function fetchDiscover(me) {
       interests, shared, match: Math.min(99, 55 + shared.length * 11),
     };
   })
-  .filter(u => u.shared.length > 0)
+  .filter(u => u.shared.length > 0 && !swiped.has(u.id))
   .sort((a, b) => b.match - a.match);
 }
 
