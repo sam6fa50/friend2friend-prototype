@@ -65,6 +65,45 @@ export async function fetchInterestsCatalog() {
   return (data || []).map(r => r.name);
 }
 
+// Discover deck: other users who share at least one interest with me.
+// (Precise distance is Phase 4 — for now we show the region as a stand-in.)
+export async function fetchDiscover(me) {
+  const { data, error } = await supabase.from('profiles')
+    .select('id, first_name, username, age, bio, region, user_interests(interests(name))')
+    .neq('id', me.id);
+  if (error) throw error;
+  const mine = new Set((me.interests || []).map(s => s.toLowerCase()));
+  return (data || []).map(r => {
+    const name = r.first_name || r.username || 'User';
+    const interests = (r.user_interests || []).map(u => u.interests?.name).filter(Boolean);
+    const shared = interests.filter(i => mine.has(i.toLowerCase()));
+    return {
+      id: r.id, name, initials: initialsFrom(name), age: r.age, bio: r.bio || '',
+      region: r.region || '', distance: r.region || 'Nearby',
+      interests, shared, match: Math.min(99, 55 + shared.length * 11),
+    };
+  })
+  .filter(u => u.shared.length > 0)
+  .sort((a, b) => b.match - a.match);
+}
+
+// Leaderboard: everyone, ranked by points.
+export async function fetchLeaderboard(limit = 50) {
+  const { data, error } = await supabase.from('profiles')
+    .select('id, first_name, username, points, connections, user_interests(interests(name))')
+    .order('points', { ascending: false }).order('username', { ascending: true }).limit(limit);
+  if (error) throw error;
+  return (data || []).map((r, i) => {
+    const name = r.first_name || r.username || 'User';
+    const interests = (r.user_interests || []).map(u => u.interests?.name).filter(Boolean);
+    return {
+      rank: i + 1, id: r.id, name, initials: initialsFrom(name),
+      points: r.points || 0, connections: r.connections || 0,
+      interest: interests[0] || '—', distance: '', trend: 'same', active: true,
+    };
+  });
+}
+
 // Persist editable profile fields + sync interest subscriptions.
 export async function saveProfile(profile) {
   const { error } = await supabase.from('profiles').update({

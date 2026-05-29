@@ -1,13 +1,12 @@
 // ── Leaderboard ────────────────────────────────────────────────────────────
 import { useState } from 'react'
 import { ScreenHeader, Icon, Avatar, F2F_INK, F2F_GREEN, F2F_BG, F2F_BOT_SAFE } from './ui.jsx'
-import { F2F_ME, F2F_LEADERBOARD } from './data.js'
 
-export function LeaderboardScreen({ blocked }) {
-  const me = F2F_ME, INK = F2F_INK, GREEN = F2F_GREEN;
-  const board = F2F_LEADERBOARD;
+export function LeaderboardScreen({ profile, board = [], blocked }) {
+  const me = profile, INK = F2F_INK, GREEN = F2F_GREEN;
   const [scope, setScope] = useState('Nearby');
   const [hidden, setHidden] = useState([]); // blocked names the user chose to hide
+  const myRank = board.findIndex(p => p.id === profile.id) + 1; // 0 = not on board
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: F2F_BG }}>
@@ -36,7 +35,7 @@ export function LeaderboardScreen({ blocked }) {
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, opacity: 0.65 }}>Your rank {scope === 'Nearby' ? 'nearby' : 'in ' + scope}</div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                <span style={{ fontSize: 30, fontWeight: 800 }}>#{me.stats.rank}</span>
+                <span style={{ fontSize: 30, fontWeight: 800 }}>{myRank ? '#' + myRank : '—'}</span>
                 <span style={{ fontSize: 13, color: GREEN, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 2 }}>
                   <Icon name="arrowUp" size={14} stroke={GREEN} /> +120 this week
                 </span>
@@ -44,9 +43,9 @@ export function LeaderboardScreen({ blocked }) {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-            <Stat label="Points" value={me.stats.points.toLocaleString()} />
-            <Stat label="Connections" value={me.stats.connections} />
-            <Stat label="Top interest" value="Skiing" />
+            <Stat label="Points" value={(me.stats?.points || 0).toLocaleString()} />
+            <Stat label="Connections" value={me.stats?.connections || 0} />
+            <Stat label="Top interest" value={me.interests?.[0] || '—'} />
           </div>
         </div>
 
@@ -75,8 +74,10 @@ export function LeaderboardScreen({ blocked }) {
                 <div style={{ fontWeight: 600, fontSize: 15, color: INK }}>{isBlocked ? 'Blocked user' : p.name}</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
                   {!isBlocked && <>
-                    <Icon name="pin" size={11} stroke="#a1a1aa" />
-                    <span style={{ fontSize: 11.5, color: '#a1a1aa' }}>{p.distance}</span>
+                    {p.distance && <>
+                      <Icon name="pin" size={11} stroke="#a1a1aa" />
+                      <span style={{ fontSize: 11.5, color: '#a1a1aa' }}>{p.distance}</span>
+                    </>}
                     <span style={{ fontSize: 10.5, fontWeight: 600, background: INK, color: '#fff', padding: '2px 8px', borderRadius: 999 }}>{p.interest}</span>
                   </>}
                   {isBlocked && <span style={{ fontSize: 11.5, color: '#a1a1aa' }}>Tap to hide</span>}

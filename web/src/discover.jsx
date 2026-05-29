@@ -1,10 +1,8 @@
 // ── Discover — Tinder-style swipe ──────────────────────────────────────────
 import { useState, useRef } from 'react'
 import { ScreenHeader, Icon, Avatar, Pill, F2F_INK, F2F_GREEN, F2F_BG, F2F_BOT_SAFE } from './ui.jsx'
-import { F2F_DISCOVER } from './data.js'
 
-export function DiscoverScreen({ onMatch, onOpenProfile }) {
-  const deck = F2F_DISCOVER;
+export function DiscoverScreen({ deck = [], onMatch, onOpenProfile }) {
   const [idx, setIdx] = useState(0);
   const [drag, setDrag] = useState({ x: 0, y: 0, active: false });
   const [leaving, setLeaving] = useState(null); // {dir}

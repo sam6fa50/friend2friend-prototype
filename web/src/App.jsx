@@ -11,7 +11,7 @@ import { InterestSearchSheet, BlockSheet, ProfileDetailSheet, Sheet } from './sh
 import { F2F_CONVERSATIONS, F2F_INVITES, F2F_BADGES } from './data.js'
 import { supabase } from './supabaseClient.js'
 import { AuthScreen } from './auth.jsx'
-import { fetchProfile, saveProfile, fetchInterestsCatalog } from './db.js'
+import { fetchProfile, saveProfile, fetchInterestsCatalog, fetchDiscover, fetchLeaderboard } from './db.js'
 
 function App() {
   const [onboarded, setOnboarded] = useState(() => localStorage.getItem('f2f_onboarded') === '1');
@@ -40,6 +40,9 @@ function App() {
 
   // interest catalog (from DB; null until loaded)
   const [catalog, setCatalog] = useState(null);
+  // discover deck + leaderboard (from DB)
+  const [discoverDeck, setDiscoverDeck] = useState([]);
+  const [leaderboard, setLeaderboard] = useState([]);
 
   // load the profile + interest catalog from Supabase whenever the user changes
   useEffect(() => {
@@ -53,6 +56,13 @@ function App() {
       .catch(err => console.error('Failed to load interest catalog', err));
     return () => { cancelled = true; };
   }, [session]);
+
+  // load discover deck + leaderboard once the profile is available
+  useEffect(() => {
+    if (!profile?.id) return;
+    fetchDiscover(profile).then(setDiscoverDeck).catch(e => console.error('discover load', e));
+    fetchLeaderboard().then(setLeaderboard).catch(e => console.error('leaderboard load', e));
+  }, [profile?.id]);
 
   useEffect(() => {
     if (!toast) return;
@@ -114,13 +124,13 @@ function App() {
             </Toast>}
 
             <div style={{ position: 'absolute', inset: 0 }}>
-              {tab === 'discover' && <DiscoverScreen onMatch={matchWith} onOpenProfile={setDetailUser} />}
+              {tab === 'discover' && <DiscoverScreen deck={discoverDeck} onMatch={matchWith} onOpenProfile={setDetailUser} />}
               {tab === 'messages' && <MessagesScreen
                 conversations={conversations} setConversations={setConversations}
                 invites={invites} setInvites={setInvites}
                 openChatId={openChatId} setOpenChatId={setOpenChatId}
                 onBlock={setBlockTarget} />}
-              {tab === 'leaderboard' && <LeaderboardScreen blocked={blocked} />}
+              {tab === 'leaderboard' && <LeaderboardScreen profile={profile} board={leaderboard} blocked={blocked} />}
               {tab === 'profile' && <ProfileScreen profile={profile} setProfile={setProfile}
                 onOpenInterests={() => setInterestSheet(true)} onPreview={setPreviewProfile} blocked={blocked}
                 onSave={() => saveProfile(profile)} onSignOut={() => supabase.auth.signOut()} />}
