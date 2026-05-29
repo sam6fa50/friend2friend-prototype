@@ -1,0 +1,25 @@
+/* Friend2Friend — global styles (ported from the prototype's Friend2Friend.html) */
+* { -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: #e6e6ea;
+  font-family: -apple-system, system-ui, sans-serif;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+#stage { transform-origin: center center; }
+
+input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; }
+input[type=range]::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 999px; background: #e4e4e7;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; margin-top: -7px;
+  width: 20px; height: 20px; border-radius: 50%; background: #0a0a0a;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3); cursor: pointer;
+}
+textarea, input { font-family: inherit; }
+
+@keyframes f2fToast { from { transform: translateY(-14px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes f2fFade  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes f2fSheet { from { transform: translateY(100%); } to { transform: none; } }

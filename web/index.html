@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Friend2Friend</title>
+</head>
+<body>
+  <div id="stage"><div id="root"></div></div>
+  <script type="module" src="/src/main.jsx"></script>
+  <script>
+    // Scale the 402×874 "device" to fit the viewport (from the prototype).
+    function fitStage() {
+      const stage = document.getElementById('stage');
+      if (!stage) return;
+      const w = 402, h = 874;
+      const s = Math.min(window.innerWidth / w, window.innerHeight / h, 1) * 0.98;
+      stage.style.transform = `scale(${s})`;
+    }
+    window.addEventListener('resize', fitStage);
+    fitStage();
+    setInterval(fitStage, 800);
+  </script>
+</body>
+</html>
