@@ -68,12 +68,13 @@ export function DiscoverScreen({ deck = [], onMatch, onOpenProfile }) {
 
         {/* next card peeking */}
         {deck[idx + 1] && (
-          <DiscoverCard data={deck[idx + 1]} style={{ transform: 'scale(0.95) translateY(10px)', opacity: 0.6 }} />
+          <DiscoverCard key={deck[idx + 1].id} data={deck[idx + 1]} style={{ transform: 'scale(0.95) translateY(10px)', opacity: 0.6 }} />
         )}
 
         {/* top card */}
         {current && (
           <DiscoverCard
+            key={current.id}
             data={current}
             onTapInfo={() => onOpenProfile(current)}
             top
