@@ -12,7 +12,7 @@ import { F2F_BADGES } from './data.js'
 import { supabase } from './supabaseClient.js'
 import { AuthScreen } from './auth.jsx'
 import { fetchProfile, saveProfile, fetchInterestsCatalog, fetchDiscover, fetchLeaderboard,
-  fetchConversations, fetchInvites, sendMessage, createDmWith, respondToInvite, recordSwipe } from './db.js'
+  fetchConversations, fetchInvites, sendMessage, createDmWith, respondToInvite, recordSwipe, updateMyLocation } from './db.js'
 
 function App() {
   const [onboarded, setOnboarded] = useState(() => localStorage.getItem('f2f_onboarded') === '1');
@@ -66,6 +66,20 @@ function App() {
     fetchLeaderboard().then(setLeaderboard).catch(e => console.error('leaderboard load', e));
     fetchConversations(profile).then(setConversations).catch(e => console.error('conversations load', e));
     fetchInvites(profile).then(setInvites).catch(e => console.error('invites load', e));
+  }, [profile?.id]);
+
+  // Capture GPS once after the profile loads (if the user shares location), save
+  // it for range matching, then refresh the deck so real distances populate.
+  useEffect(() => {
+    if (!profile?.id || !profile.shareLocation || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        await updateMyLocation(profile, pos.coords.latitude, pos.coords.longitude);
+        fetchDiscover(profile).then(d => { setDiscoverDeck(d); setDeckIdx(0); }).catch(() => {});
+      },
+      (err) => console.warn('geolocation unavailable:', err.message),
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 },
+    );
   }, [profile?.id]);
 
   // Live-refresh conversations + invites while on the Messages tab (stable deps

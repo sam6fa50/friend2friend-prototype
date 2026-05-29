@@ -72,30 +72,49 @@ export async function recordSwipe(me, targetId, direction) {
   if (error) console.warn('recordSwipe failed (is 0003_swipes applied?):', error.message);
 }
 
-// Discover deck: other users who share at least one interest with me and that
-// I haven't swiped yet. (Precise distance is Phase 4 — region as a stand-in.)
+// Save my current GPS position (PostGIS geography point) for range matching.
+export async function updateMyLocation(me, lat, lng) {
+  const { error } = await supabase.from('profiles')
+    .update({ location: `SRID=4326;POINT(${lng} ${lat})`, location_at: new Date().toISOString() })
+    .eq('id', me.id);
+  if (error) console.warn('updateMyLocation failed:', error.message);
+}
+
+function mapCandidate(r, mine) {
+  const name = r.first_name || r.username || 'User';
+  const interests = r.interests || [];
+  const shared = interests.filter(i => mine.has(i.toLowerCase()));
+  const distance = r.distance_mi != null ? `${r.distance_mi.toFixed(1)} mi away` : (r.region || 'Nearby');
+  return { id: r.id, name, initials: initialsFrom(name), age: r.age, bio: r.bio || '',
+    region: r.region || '', distance, interests, shared, match: Math.min(99, 55 + shared.length * 11) };
+}
+
+// Discover deck. Prefers the location-aware RPC (real distance + mutual range);
+// falls back to a client-side shared-interest match if 0004 isn't applied yet.
 export async function fetchDiscover(me) {
+  const mine = new Set((me.interests || []).map(s => s.toLowerCase()));
+
+  const rpc = await supabase.rpc('discover_candidates');
+  if (!rpc.error) {
+    return (rpc.data || []).map(r => mapCandidate(r, mine)).sort((a, b) => b.match - a.match);
+  }
+  console.warn('discover_candidates RPC unavailable, using fallback:', rpc.error.message);
+
+  // Fallback (pre-0004): no distance, exclude swiped client-side.
   let swiped = new Set();
   const sw = await supabase.from('swipes').select('target_id').eq('swiper_id', me.id);
   if (!sw.error) swiped = new Set((sw.data || []).map(r => r.target_id));
-
   const { data, error } = await supabase.from('profiles')
     .select('id, first_name, username, age, bio, region, user_interests(interests(name))')
     .neq('id', me.id);
   if (error) throw error;
-  const mine = new Set((me.interests || []).map(s => s.toLowerCase()));
   return (data || []).map(r => {
     const name = r.first_name || r.username || 'User';
     const interests = (r.user_interests || []).map(u => u.interests?.name).filter(Boolean);
     const shared = interests.filter(i => mine.has(i.toLowerCase()));
-    return {
-      id: r.id, name, initials: initialsFrom(name), age: r.age, bio: r.bio || '',
-      region: r.region || '', distance: r.region || 'Nearby',
-      interests, shared, match: Math.min(99, 55 + shared.length * 11),
-    };
-  })
-  .filter(u => u.shared.length > 0 && !swiped.has(u.id))
-  .sort((a, b) => b.match - a.match);
+    return { id: r.id, name, initials: initialsFrom(name), age: r.age, bio: r.bio || '',
+      region: r.region || '', distance: r.region || 'Nearby', interests, shared, match: Math.min(99, 55 + shared.length * 11) };
+  }).filter(u => u.shared.length > 0 && !swiped.has(u.id)).sort((a, b) => b.match - a.match);
 }
 
 // Leaderboard: everyone, ranked by points.
