@@ -11,7 +11,7 @@ import { InterestSearchSheet, BlockSheet, ProfileDetailSheet, Sheet } from './sh
 import { F2F_CONVERSATIONS, F2F_INVITES, F2F_BADGES } from './data.js'
 import { supabase } from './supabaseClient.js'
 import { AuthScreen } from './auth.jsx'
-import { fetchProfile, saveProfile } from './db.js'
+import { fetchProfile, saveProfile, fetchInterestsCatalog } from './db.js'
 
 function App() {
   const [onboarded, setOnboarded] = useState(() => localStorage.getItem('f2f_onboarded') === '1');
@@ -38,13 +38,19 @@ function App() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  // load the profile from Supabase whenever the signed-in user changes
+  // interest catalog (from DB; null until loaded)
+  const [catalog, setCatalog] = useState(null);
+
+  // load the profile + interest catalog from Supabase whenever the user changes
   useEffect(() => {
     let cancelled = false;
-    if (!session?.user) { setProfile(null); return; }
+    if (!session?.user) { setProfile(null); setCatalog(null); return; }
     fetchProfile(session.user)
       .then(p => { if (!cancelled) setProfile(p); })
       .catch(err => { console.error('Failed to load profile', err); if (!cancelled) setToast({ text: 'Could not load your profile.' }); });
+    fetchInterestsCatalog()
+      .then(c => { if (!cancelled) setCatalog(c); })
+      .catch(err => console.error('Failed to load interest catalog', err));
     return () => { cancelled = true; };
   }, [session]);
 
@@ -124,7 +130,7 @@ function App() {
             {!(tab === 'messages' && openChatId) && <BottomNav tab={tab} onTab={(t) => { setTab(t); setOpenChatId(null); }} />}
 
             {/* sheets */}
-            {interestSheet && <InterestSearchSheet selected={profile.interests}
+            {interestSheet && <InterestSearchSheet selected={profile.interests} catalog={catalog}
               onToggle={toggleInterest} onClose={() => setInterestSheet(false)} />}
             {blockTarget && <BlockSheet target={blockTarget} onConfirm={confirmBlock} onClose={() => setBlockTarget(null)} />}
             {detailUser && <ProfileDetailSheet user={detailUser} onClose={() => setDetailUser(null)}

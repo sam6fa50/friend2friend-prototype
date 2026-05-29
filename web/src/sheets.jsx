@@ -22,11 +22,13 @@ export function Sheet({ children, onClose, title, tall }) {
 }
 
 // ── Interest search ("See More") ────────────────────────────────────────────
-export function InterestSearchSheet({ selected, onToggle, onClose }) {
+export function InterestSearchSheet({ selected, onToggle, onClose, catalog }) {
   const [q, setQ] = useState('');
   const [custom, setCustom] = useState('');
   const INK = F2F_INK, GREEN = F2F_GREEN;
-  const pool = [...F2F_POPULAR, ...F2F_NICHE].filter((v, i, a) => a.indexOf(v) === i);
+  // prefer the live DB catalog; fall back to the bundled lists
+  const base = catalog && catalog.length ? catalog : [...F2F_POPULAR, ...F2F_NICHE];
+  const pool = base.filter((v, i, a) => a.indexOf(v) === i);
   const norm = q.trim().toLowerCase();
   const results = pool.filter(i => i.toLowerCase().includes(norm));
   const exactExists = pool.some(i => i.toLowerCase() === norm);

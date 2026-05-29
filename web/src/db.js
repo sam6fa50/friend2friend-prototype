@@ -57,6 +57,14 @@ export async function fetchProfile(user) {
   };
 }
 
+// Load the active interest catalog (names) from the DB, for the picker/search.
+export async function fetchInterestsCatalog() {
+  const { data, error } = await supabase
+    .from('interests').select('name').eq('status', 'active').order('name');
+  if (error) throw error;
+  return (data || []).map(r => r.name);
+}
+
 // Persist editable profile fields + sync interest subscriptions.
 export async function saveProfile(profile) {
   const { error } = await supabase.from('profiles').update({
