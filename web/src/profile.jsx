@@ -4,6 +4,18 @@ import { Icon, Avatar, Pill, SocialIcon, MapPlaceholder,
   F2F_INK, F2F_GREEN, F2F_BG, F2F_TOP_SAFE, F2F_BOT_SAFE } from './ui.jsx'
 import { Toggle } from './sheets.jsx'
 import { F2F_BADGES, F2F_BANNED } from './data.js'
+import {
+  getBioValidation,
+  canSaveProfile,
+  updateProfileField,
+  toggleSocial,
+  removeInterest,
+  toggleShareLocation,
+  toggleBadgeEquipped,
+  getEquippedBadges,
+  getSaveErrorMessage,
+  BIO_MAX_LENGTH,
+} from './profileLogic.js'
 
 export function ProfileScreen({ profile, setProfile, onOpenInterests, onPreview, blocked, onSave, onSignOut }) {
   const INK = F2F_INK, GREEN = F2F_GREEN;
@@ -11,11 +23,10 @@ export function ProfileScreen({ profile, setProfile, onOpenInterests, onPreview,
   const [saving, setSaving] = useState(false);
   const [saveErr, setSaveErr] = useState(null);
   const bio = profile.bio;
-  const overLimit = bio.length > 255;
-  const flagged = F2F_BANNED.find(w => bio.toLowerCase().includes(w));
-  const canSave = !overLimit && !flagged && !saving;
+  const { overLimit, flagged } = getBioValidation(bio, F2F_BANNED);
+  const canSave = canSaveProfile({ overLimit, flagged, saving });
 
-  const set = (k, v) => { setProfile(p => ({ ...p, [k]: v })); setSaved(false); };
+  const set = (k, v) => { setProfile(p => updateProfileField(p, k, v)); setSaved(false); };
 
   async function handleSave() {
     if (!canSave) return;
@@ -25,12 +36,12 @@ export function ProfileScreen({ profile, setProfile, onOpenInterests, onPreview,
       setSaved(true);
     } catch (err) {
       console.error('Save failed', err);
-      setSaveErr(err?.message || 'Could not save. Please try again.');
+      setSaveErr(getSaveErrorMessage(err));
     } finally {
       setSaving(false);
     }
   }
-  const equippedBadges = F2F_BADGES.filter(b => profile.equipped?.includes(b.id));
+  const equippedBadges = getEquippedBadges(F2F_BADGES, profile.equipped);
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: F2F_BG }}>
@@ -61,7 +72,7 @@ export function ProfileScreen({ profile, setProfile, onOpenInterests, onPreview,
                 ? <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#dc2626', fontSize: 12.5, fontWeight: 600 }}>
                     <Icon name="info" size={15} stroke="#dc2626" /> Inappropriate content detected</span>
                 : <span style={{ fontSize: 12, color: '#a1a1aa' }}>Keep it catchy — others see this first</span>}
-              <span style={{ fontSize: 12, fontWeight: 600, color: overLimit ? '#dc2626' : '#a1a1aa' }}>{bio.length}/255</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: overLimit ? '#dc2626' : '#a1a1aa' }}>{bio.length}/{BIO_MAX_LENGTH}</span>
             </div>
           </Section>
 
@@ -69,7 +80,7 @@ export function ProfileScreen({ profile, setProfile, onOpenInterests, onPreview,
           <Section label="Social media">
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
               {['instagram', 'twitter', 'tiktok', 'discord'].map(k => (
-                <div key={k} onClick={() => set('socials', { ...profile.socials, [k]: !profile.socials[k] })} style={{ cursor: 'pointer' }}>
+                <div key={k} onClick={() => set('socials', toggleSocial(profile.socials, k))} style={{ cursor: 'pointer' }}>
                   <SocialIcon kind={k} on={profile.socials[k]} />
                 </div>
               ))}
@@ -85,7 +96,7 @@ export function ProfileScreen({ profile, setProfile, onOpenInterests, onPreview,
           <Section label="Interests" right={<span style={{ fontSize: 12.5, color: '#a1a1aa' }}>{profile.interests.length}/20</span>}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 9 }}>
               {profile.interests.map(i => (
-                <Pill key={i} on onRemove={() => set('interests', profile.interests.filter(x => x !== i))}>{i}</Pill>
+                <Pill key={i} on onRemove={() => set('interests', removeInterest(profile.interests, i))}>{i}</Pill>
               ))}
               <div onClick={onOpenInterests} style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
                 padding: '7px 13px', borderRadius: 999, border: '1px dashed #cbd5d8', background: '#fff',
@@ -97,7 +108,7 @@ export function ProfileScreen({ profile, setProfile, onOpenInterests, onPreview,
 
           {/* LOCATION */}
           <Section label="Location" right={
-            <div onClick={() => set('shareLocation', !profile.shareLocation)} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <div onClick={() => { setProfile(p => toggleShareLocation(p)); setSaved(false); }} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
               <span style={{ fontSize: 12.5, color: '#71717a', fontWeight: 600 }}>Share</span>
               <Toggle on={profile.shareLocation} />
             </div>}>
@@ -120,13 +131,7 @@ export function ProfileScreen({ profile, setProfile, onOpenInterests, onPreview,
                 const equipped = profile.equipped?.includes(b.id);
                 return (
                   <div key={b.id} onClick={() => {
-                    if (!b.earned) return;
-                    setProfile(p => {
-                      const has = p.equipped.includes(b.id);
-                      if (has) return { ...p, equipped: p.equipped.filter(x => x !== b.id) };
-                      if (p.equipped.length >= 5) return p;
-                      return { ...p, equipped: [...p.equipped, b.id] };
-                    });
+                    setProfile(p => toggleBadgeEquipped(p, b.id, b.earned));
                   }} style={{
                     border: '1px solid ' + (equipped ? INK : '#ececef'), borderRadius: 14, padding: '12px 8px',
                     textAlign: 'center', background: equipped ? INK : '#fff', cursor: b.earned ? 'pointer' : 'default',
