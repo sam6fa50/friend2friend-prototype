@@ -5,7 +5,7 @@ import { ScreenHeader, Icon, Avatar, F2F_INK, F2F_GREEN, F2F_BG, F2F_BOT_SAFE } 
 export function LeaderboardScreen({ profile, board = [], blocked }) {
   const me = profile, INK = F2F_INK, GREEN = F2F_GREEN;
   const [scope, setScope] = useState('Nearby');
-  const [hidden, setHidden] = useState([]); // blocked names the user chose to hide
+  const [hidden, setHidden] = useState([]); // blocked user ids the user chose to hide
   const myRank = board.findIndex(p => p.id === profile.id) + 1; // 0 = not on board
 
   return (
@@ -53,11 +53,11 @@ export function LeaderboardScreen({ profile, board = [], blocked }) {
           letterSpacing: 0.4, margin: '4px 4px 10px' }}>Top members {scope === 'Nearby' ? 'in your area' : ''}</div>
 
         {board.map(p => {
-          const isBlocked = blocked.includes(p.name);
-          const isHidden = hidden.includes(p.name);
+          const isBlocked = blocked.includes(p.id);
+          const isHidden = hidden.includes(p.id);
           if (isHidden) return null;
           return (
-            <div key={p.rank} onClick={() => isBlocked && setHidden(h => [...h, p.name])} style={{
+            <div key={p.rank} onClick={() => isBlocked && setHidden(h => [...h, p.id])} style={{
               display: 'flex', alignItems: 'center', gap: 12, background: '#fff', borderRadius: 16,
               padding: '12px 14px', marginBottom: 8, border: '1px solid #ececef',
               opacity: isBlocked ? 0.45 : 1, cursor: isBlocked ? 'pointer' : 'default',

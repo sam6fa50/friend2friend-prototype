@@ -12,7 +12,8 @@ import { F2F_BADGES } from './data.js'
 import { supabase } from './supabaseClient.js'
 import { AuthScreen } from './auth.jsx'
 import { fetchProfile, saveProfile, fetchInterestsCatalog, fetchDiscover, fetchLeaderboard,
-  fetchConversations, fetchInvites, sendMessage, createDmWith, respondToInvite, recordSwipe, updateMyLocation } from './db.js'
+  fetchConversations, fetchInvites, sendMessage, createDmWith, respondToInvite, recordSwipe, updateMyLocation,
+  reverseGeocode, fetchBlocked, blockUser } from './db.js'
 
 function App() {
   const [onboarded, setOnboarded] = useState(() => localStorage.getItem('f2f_onboarded') === '1');
@@ -66,21 +67,37 @@ function App() {
     fetchLeaderboard().then(setLeaderboard).catch(e => console.error('leaderboard load', e));
     fetchConversations(profile).then(setConversations).catch(e => console.error('conversations load', e));
     fetchInvites(profile).then(setInvites).catch(e => console.error('invites load', e));
+    fetchBlocked(profile).then(b => setBlocked(b.map(x => x.id))).catch(e => console.error('blocked load', e));
   }, [profile?.id]);
 
-  // Capture GPS once after the profile loads (if the user shares location), save
-  // it for range matching, then refresh the deck so real distances populate.
+  // Capture real GPS whenever the profile loads or the user turns on location
+  // sharing: reverse-geocode it to a "City, ST" region, persist both, reflect
+  // the region in the UI, then refresh the deck so real distances populate.
+  // Browser geolocation needs a secure context (HTTPS or localhost).
   useEffect(() => {
-    if (!profile?.id || !profile.shareLocation || !navigator.geolocation) return;
+    if (!profile?.id || !profile.shareLocation) return;
+    if (!('geolocation' in navigator)) { console.warn('geolocation not supported by this browser'); return; }
+    let cancelled = false;
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
-        await updateMyLocation(profile, pos.coords.latitude, pos.coords.longitude);
-        fetchDiscover(profile).then(d => { setDiscoverDeck(d); setDeckIdx(0); }).catch(() => {});
+        if (cancelled) return;
+        const { latitude, longitude } = pos.coords;
+        const region = await reverseGeocode(latitude, longitude);
+        await updateMyLocation(profile, latitude, longitude, region);
+        if (cancelled) return;
+        if (region) setProfile(p => (p && p.id === profile.id ? { ...p, region } : p));
+        fetchDiscover(profile).then(d => { if (!cancelled) { setDiscoverDeck(d); setDeckIdx(0); } }).catch(() => {});
       },
-      (err) => console.warn('geolocation unavailable:', err.message),
-      { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 },
+      (err) => {
+        if (cancelled) return;
+        console.warn('geolocation unavailable:', err.message);
+        if (err.code === err.PERMISSION_DENIED)
+          setToast({ text: 'Location off — turn it on for accurate distances.' });
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
     );
-  }, [profile?.id]);
+    return () => { cancelled = true; };
+  }, [profile?.id, profile?.shareLocation]);
 
   // Live-refresh conversations + invites while on the Messages tab (stable deps
   // so the interval fires reliably; this is what makes incoming messages auto-appear).
@@ -150,13 +167,22 @@ function App() {
     } catch (e) { console.error('message failed', e); setToast({ text: 'Could not open the chat.' }); }
   }
 
-  function confirmBlock(target, scopes) {
-    setBlocked(prev => prev.includes(target.name) ? prev : [...prev, target.name]);
-    setConversations(prev => prev.filter(c => c.name !== target.name));
-    setBlockTarget(null);
-    setDetailUser(null);
-    if (openChatId && conversations.find(c => c.id === openChatId)?.name === target.name) setOpenChatId(null);
-    setToast({ text: `${target.name.split(' ')[0]} has been blocked` });
+  async function confirmBlock(target, scopes) {
+    try {
+      await blockUser(profile, target.id, scopes);
+      setBlocked(prev => prev.includes(target.id) ? prev : [...prev, target.id]);
+      setConversations(prev => prev.filter(c => c.otherId !== target.id));
+      if (openChatId && conversations.find(c => c.id === openChatId)?.otherId === target.id) setOpenChatId(null);
+      // refresh the deck so a freshly blocked person drops out of Discover
+      fetchDiscover(profile).then(d => { setDiscoverDeck(d); setDeckIdx(0); }).catch(() => {});
+      setToast({ text: `${target.name.split(' ')[0]} has been blocked` });
+    } catch (e) {
+      console.error('block failed', e);
+      setToast({ text: 'Could not block. Please try again.' });
+    } finally {
+      setBlockTarget(null);
+      setDetailUser(null);
+    }
   }
 
   function toggleInterest(name, add) {

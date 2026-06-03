@@ -1,16 +1,15 @@
 // ── Data access: profile load/save (Supabase) ─────────────────────────────
 import { supabase } from './supabaseClient.js'
+import { F2F_BADGES } from './data.js'
+import { initialsFrom, mapCandidate, sortByMatch, toInterestSet, isViableCandidate,
+  pointWKT, formatRegion } from './discoverLogic.js'
 
-// "Petr the Anteater" -> "PA"; "Sam" -> "SA"
-export function initialsFrom(name) {
-  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return '🙂';
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
+// Re-export so existing importers of `initialsFrom` from db.js keep working.
+export { initialsFrom }
 
-// Badge persistence lands in Phase 3; until then we default the equipped set
-// so the Badges section behaves like the prototype.
+// Default equipped set for brand-new accounts that have no badge rows yet.
+// Once the user saves their profile we persist their real selection (see
+// syncBadges) and read it back, so this only seeds the very first load.
 const DEFAULT_EQUIPPED = ['pioneer', 'connector', 'streak'];
 
 // Load the logged-in user's profile, creating a row if one doesn't exist yet
@@ -36,7 +35,8 @@ export async function fetchProfile(user) {
   ]);
 
   const name = row.first_name || row.username || user.email?.split('@')[0] || 'You';
-  const equippedFromDb = (ub || []).filter(b => b.equipped).map(b => b.badge_id);
+  const badgeRows = ub || [];
+  const equippedFromDb = badgeRows.filter(b => b.equipped).map(b => b.badge_id);
 
   return {
     id: row.id,
@@ -52,7 +52,9 @@ export async function fetchProfile(user) {
     socials: row.socials && Object.keys(row.socials).length
       ? row.socials : { instagram: false, twitter: false, tiktok: false, discord: false },
     interests: (ui || []).map(r => r.interests?.name).filter(Boolean),
-    equipped: equippedFromDb.length ? equippedFromDb : DEFAULT_EQUIPPED,
+    // Once the user has any badge rows we trust the DB (even if they've
+    // unequipped everything); only seed the default for a fresh account.
+    equipped: badgeRows.length ? equippedFromDb : DEFAULT_EQUIPPED,
     stats: { points: row.points || 0, connections: row.connections || 0, rank: 0 },
   };
 }
@@ -72,31 +74,39 @@ export async function recordSwipe(me, targetId, direction) {
   if (error) console.warn('recordSwipe failed (is 0003_swipes applied?):', error.message);
 }
 
-// Save my current GPS position (PostGIS geography point) for range matching.
-export async function updateMyLocation(me, lat, lng) {
-  const { error } = await supabase.from('profiles')
-    .update({ location: `SRID=4326;POINT(${lng} ${lat})`, location_at: new Date().toISOString() })
-    .eq('id', me.id);
+// Save my current GPS position (PostGIS geography point) for range matching,
+// plus an optional human-readable region ("City, ST") for display.
+export async function updateMyLocation(me, lat, lng, region) {
+  const patch = { location: pointWKT(lat, lng), location_at: new Date().toISOString() };
+  if (region) patch.region = region;
+  const { error } = await supabase.from('profiles').update(patch).eq('id', me.id);
   if (error) console.warn('updateMyLocation failed:', error.message);
 }
 
-function mapCandidate(r, mine) {
-  const name = r.first_name || r.username || 'User';
-  const interests = r.interests || [];
-  const shared = interests.filter(i => mine.has(i.toLowerCase()));
-  const distance = r.distance_mi != null ? `${r.distance_mi.toFixed(1)} mi away` : (r.region || 'Nearby');
-  return { id: r.id, name, initials: initialsFrom(name), age: r.age, bio: r.bio || '',
-    region: r.region || '', distance, interests, shared, match: Math.min(99, 55 + shared.length * 11) };
+// Turn lat/lng into a human "City, ST" string using a keyless, CORS-friendly
+// reverse-geocoder that runs straight from the browser. Degrades to '' on any
+// failure so a flaky lookup never blocks saving the real coordinates.
+export async function reverseGeocode(lat, lng) {
+  try {
+    const res = await fetch(
+      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`,
+    );
+    if (!res.ok) return '';
+    return formatRegion(await res.json());
+  } catch (e) {
+    console.warn('reverseGeocode failed:', e.message);
+    return '';
+  }
 }
 
 // Discover deck. Prefers the location-aware RPC (real distance + mutual range);
 // falls back to a client-side shared-interest match if 0004 isn't applied yet.
 export async function fetchDiscover(me) {
-  const mine = new Set((me.interests || []).map(s => s.toLowerCase()));
+  const mine = toInterestSet(me.interests);
 
   const rpc = await supabase.rpc('discover_candidates');
   if (!rpc.error) {
-    return (rpc.data || []).map(r => mapCandidate(r, mine)).sort((a, b) => b.match - a.match);
+    return sortByMatch((rpc.data || []).map(r => mapCandidate(r, mine)));
   }
   console.warn('discover_candidates RPC unavailable, using fallback:', rpc.error.message);
 
@@ -108,13 +118,11 @@ export async function fetchDiscover(me) {
     .select('id, first_name, username, age, bio, region, user_interests(interests(name))')
     .neq('id', me.id);
   if (error) throw error;
-  return (data || []).map(r => {
-    const name = r.first_name || r.username || 'User';
-    const interests = (r.user_interests || []).map(u => u.interests?.name).filter(Boolean);
-    const shared = interests.filter(i => mine.has(i.toLowerCase()));
-    return { id: r.id, name, initials: initialsFrom(name), age: r.age, bio: r.bio || '',
-      region: r.region || '', distance: r.region || 'Nearby', interests, shared, match: Math.min(99, 55 + shared.length * 11) };
-  }).filter(u => u.shared.length > 0 && !swiped.has(u.id)).sort((a, b) => b.match - a.match);
+  const deck = (data || []).map(r => mapCandidate({
+    id: r.id, first_name: r.first_name, username: r.username, age: r.age, bio: r.bio, region: r.region,
+    interests: (r.user_interests || []).map(u => u.interests?.name).filter(Boolean),
+  }, mine));
+  return sortByMatch(deck.filter(u => isViableCandidate(u, swiped)));
 }
 
 // Leaderboard: everyone, ranked by points.
@@ -253,6 +261,38 @@ export async function saveProfile(profile) {
   }).eq('id', profile.id);
   if (error) throw error;
   await syncInterests(profile.id, profile.interests);
+  await syncBadges(profile.id, profile.equipped || []);
+}
+
+// Persist which badges the user has equipped. We grant a row for every badge
+// the catalog marks as earned (the prototype's static achievement set) and set
+// `equipped` per the user's selection. Idempotent via upsert.
+async function syncBadges(userId, equippedIds) {
+  const earned = F2F_BADGES.filter(b => b.earned).map(b => b.id);
+  if (!earned.length) return;
+  const rows = earned.map(id => ({ user_id: userId, badge_id: id, equipped: equippedIds.includes(id) }));
+  const { error } = await supabase.from('user_badges')
+    .upsert(rows, { onConflict: 'user_id,badge_id' });
+  if (error) throw error;
+}
+
+// ── Blocking ───────────────────────────────────────────────────────────────
+// The blocks I've created, as { id, scopes } for each blocked user. Used to
+// gray out the leaderboard and drive client-side filtering; the DB also
+// enforces blocks server-side (RLS + the discover RPC).
+export async function fetchBlocked(me) {
+  const { data, error } = await supabase.from('blocks')
+    .select('blocked_id, scopes').eq('blocker_id', me.id);
+  if (error) throw error;
+  return (data || []).map(r => ({ id: r.blocked_id, scopes: r.scopes }));
+}
+
+// Block a user with the chosen scopes ({ profile, geo, messages, leaderboard }).
+// Idempotent: re-blocking updates the scopes.
+export async function blockUser(me, targetId, scopes) {
+  const { error } = await supabase.from('blocks')
+    .upsert({ blocker_id: me.id, blocked_id: targetId, scopes }, { onConflict: 'blocker_id,blocked_id' });
+  if (error) throw error;
 }
 
 // Resolve interest names to ids, creating any custom ones the user added.

@@ -128,7 +128,7 @@ function ChatView({ convo, onBack, onBlock, onSend, onRefresh }) {
             background: '#fff', borderRadius: 14, boxShadow: '0 12px 34px rgba(0,0,0,0.18)', overflow: 'hidden',
             border: '1px solid #ececef', minWidth: 180 }}>
             <MenuItem label="View profile" icon="user" onClick={() => setMenu(false)} />
-            <MenuItem label="Block user" icon="shield" danger onClick={() => { setMenu(false); onBlock({ name: convo.name, initials: convo.initials }); }} />
+            <MenuItem label="Block user" icon="shield" danger onClick={() => { setMenu(false); onBlock({ id: convo.otherId, name: convo.name, initials: convo.initials }); }} />
           </div>
         )}
       </div>

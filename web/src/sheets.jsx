@@ -150,7 +150,7 @@ export function ProfileDetailSheet({ user, onClose, onBlock, onMessage }) {
         <MapPlaceholder height={120} label={user.distance + ' · approx.'} />
       </div>
       <div style={{ borderTop: '1px solid #f0f0f2', padding: '12px 18px 0', display: 'flex', gap: 10 }}>
-        <button onClick={() => onBlock({ name: user.name, initials: user.initials })} style={{ width: 52, borderRadius: 14,
+        <button onClick={() => onBlock({ id: user.id, name: user.name, initials: user.initials })} style={{ width: 52, borderRadius: 14,
           border: '1px solid #e4e4e7', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <Icon name="shield" size={20} stroke="#71717a" />
         </button>
