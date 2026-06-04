@@ -1,0 +1,66 @@
+name: Deploy web app to GitHub Pages
+
+# Builds the Vite app in web/ and publishes it to GitHub Pages.
+#
+# One-time setup before this works:
+#   1. Repo → Settings → Pages → Build and deployment → Source: "GitHub Actions".
+#   2. Repo → Settings → Secrets and variables → Actions → New repository secret,
+#      add BOTH (values from Supabase → Settings → API):
+#        - VITE_SUPABASE_URL
+#        - VITE_SUPABASE_ANON_KEY
+#      (The anon key is browser-safe by design, but secrets keep them out of logs.)
+#
+# Deployed URL: https://sam6fa50.github.io/friend2friend-prototype/
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Permissions the deploy-pages action needs.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deploy at a time; newer pushes cancel in-flight ones.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run build
+        env:
+          GITHUB_PAGES: 'true'
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
